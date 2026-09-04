@@ -6,7 +6,7 @@ from typing import Iterable
 from .interfaces import ScanContext, Scanner
 from .models import Assessment, AssessmentStatus, Target
 from .policies import ExecutionPolicy, PolicyViolation, validate_authorization
-from .validation import deduplicate_findings
+from .validation import deduplicate_findings, require_evidence_for_confirmation
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,10 +24,20 @@ class AssessmentEngine:
         self._scanners = tuple(scanners)
 
     def run(self, target: Target, assessment: Assessment, policy: ExecutionPolicy) -> AssessmentOutput:
+        if assessment.target_id != target.id:
+            raise PolicyViolation("Assessment target does not match the target being scanned")
         if target.authorization is None:
             raise PolicyViolation("Assessment requires an authorization record")
 
-        validate_authorization(target.authorization, "passive_scan")
+        required_capability = "passive_scan"
+        validate_authorization(target.authorization, required_capability)
+        policy.require(required_capability)
+
+        if assessment.authorization_id is not None:
+            reference = target.authorization.authorization_reference
+            if reference != assessment.authorization_id:
+                raise PolicyViolation("Assessment authorization does not match target authorization")
+
         assessment.transition(AssessmentStatus.AUTHORIZED)
         assessment.transition(AssessmentStatus.RUNNING)
 
@@ -42,6 +52,9 @@ class AssessmentEngine:
                 missing = scanner.required_capabilities - policy.allowed_capabilities
                 if missing:
                     continue
+                for capability in scanner.required_capabilities:
+                    validate_authorization(target.authorization, capability)
+                    policy.require(capability)
 
                 context = ScanContext(target=target, assessment_id=str(assessment.id), execution_policy=policy)
                 result = scanner.scan(context)
@@ -51,6 +64,16 @@ class AssessmentEngine:
                 assessment.scanner_ids.append(scanner.id)
 
             all_findings = deduplicate_findings(all_findings)
+            asset_ids = {asset.id for asset in all_assets}
+            evidence_by_id = {evidence.id: evidence for evidence in all_evidence}
+            for finding in all_findings:
+                if finding.assessment_id != assessment.id:
+                    raise PolicyViolation("Scanner returned a finding for another assessment")
+                if finding.asset_id not in asset_ids:
+                    raise PolicyViolation("Scanner returned a finding for an unknown asset")
+                if finding.status.value == "confirmed":
+                    require_evidence_for_confirmation(finding, evidence_by_id.values())
+
             assessment.asset_ids.extend(asset.id for asset in all_assets)
             assessment.finding_ids.extend(finding.id for finding in all_findings)
             assessment.transition(AssessmentStatus.COMPLETED)
