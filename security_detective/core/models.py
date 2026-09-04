@@ -74,6 +74,12 @@ class ScopeRule:
     pattern: str
     action: str = "allow"
 
+    def __post_init__(self) -> None:
+        if self.action not in {"allow", "deny"}:
+            raise ValueError("ScopeRule action must be 'allow' or 'deny'")
+        if not self.pattern.strip():
+            raise ValueError("ScopeRule pattern must not be empty")
+
 
 @dataclass(frozen=True, slots=True)
 class Scope:
