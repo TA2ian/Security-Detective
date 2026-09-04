@@ -28,43 +28,28 @@ def auth(*caps: str, reference: str | None = None) -> Authorization:
 
 
 def test_scope_deny_wins_and_url_host_is_normalized() -> None:
-    scope = Scope(allows=(ScopeRule("example.com"), ScopeRule("*.example.com")), denies=(ScopeRule("admin.example.com", action="deny"),))
+    scope = Scope(allows=(ScopeRule("example.com"), ScopeRule("*.example.com")), denies=(ScopeRule("admin.example.com"),))
     assert in_scope("example.com", scope)
     assert in_scope("https://www.example.com/path?q=1", scope)
     assert not in_scope("https://admin.example.com/path", scope)
 
 
-def test_scope_does_not_treat_deny_rule_with_wrong_action_as_deny() -> None:
-    scope = Scope(allows=(ScopeRule("example.com"),), denies=(ScopeRule("example.com", action="allow"),))
-    assert in_scope("example.com", scope)
+def test_empty_scope_denies_by_default() -> None:
+    assert not in_scope("example.com", Scope())
 
 
 def test_scope_blocks_unauthorized_resource() -> None:
     with pytest.raises(PolicyViolation):
-        authorize_operation(
-            authorization=auth("passive_scan"),
-            scope=Scope(allows=(ScopeRule("example.com"),)),
-            policy=ExecutionPolicy(),
-            capability="passive_scan",
-            resource="other.example.com",
-        )
+        authorize_operation(authorization=auth("passive_scan"), scope=Scope(allows=(ScopeRule("example.com"),)), policy=ExecutionPolicy(), capability="passive_scan", resource="other.example.com")
 
 
 def test_state_change_is_denied_by_default() -> None:
     with pytest.raises(PolicyViolation):
-        authorize_operation(
-            authorization=auth("active_scan"),
-            scope=Scope(allows=(ScopeRule("example.com"),)),
-            policy=ExecutionPolicy(allowed_capabilities=frozenset({"active_scan"})),
-            capability="active_scan",
-            resource="example.com",
-            state_changing=True,
-        )
+        authorize_operation(authorization=auth("active_scan"), scope=Scope(allows=(ScopeRule("example.com"),)), policy=ExecutionPolicy(allowed_capabilities=frozenset({"active_scan"})), capability="active_scan", resource="example.com", state_changing=True)
 
 
 def test_expired_and_naive_authorization_are_rejected() -> None:
-    expired = auth("passive_scan")
-    expired = Authorization(True, expired.granted_capabilities, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    expired = Authorization(True, frozenset({"passive_scan"}), expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
     with pytest.raises(PolicyViolation):
         authorize_operation(authorization=expired, scope=Scope(allows=(ScopeRule("example.com"),)), policy=ExecutionPolicy(), capability="passive_scan", resource="example.com")
 
@@ -105,7 +90,6 @@ def test_finding_lifecycle_and_deduplication_preserve_evidence() -> None:
     assert len(result) == 1
     assert result[0].confidence == 0.95
     assert set(result[0].evidence_ids) == {evidence_a.id, evidence_b.id}
-
     assert transition_finding(transition_finding(confirmed, FindingStatus.FIXED), FindingStatus.VERIFIED).status == FindingStatus.VERIFIED
     with pytest.raises(FindingValidationError):
         transition_finding(transition_finding(base, FindingStatus.UNVERIFIED), FindingStatus.CONFIRMED)
