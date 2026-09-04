@@ -58,8 +58,8 @@ def in_scope(value: str, scope: Scope) -> bool:
     candidate = _candidate(value)
     if not candidate:
         return False
-    allowed = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.allows if rule.action == "allow")
-    denied = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.denies if rule.action == "deny")
+    allowed = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.allows)
+    denied = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.denies)
     return allowed and not denied
 
 
