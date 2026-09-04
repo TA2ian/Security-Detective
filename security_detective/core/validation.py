@@ -18,8 +18,8 @@ _ALLOWED: dict[FindingStatus, set[FindingStatus]] = {
     FindingStatus.FIXED: {FindingStatus.VERIFIED, FindingStatus.CONFIRMED},
     FindingStatus.VERIFIED: set(),
     FindingStatus.FALSE_POSITIVE: set(),
-    FindingStatus.UNVERIFIED: {FindingStatus.VALIDATING, FindingStatus.CONFIRMED},
-    FindingStatus.ACCEPTED_RISK: {FindingStatus.VALIDATING, FindingStatus.CONFIRMED},
+    FindingStatus.UNVERIFIED: {FindingStatus.VALIDATING},
+    FindingStatus.ACCEPTED_RISK: {FindingStatus.VALIDATING},
 }
 
 
@@ -36,11 +36,18 @@ def require_evidence_for_confirmation(finding: Finding, evidence: Iterable[Evide
 
 
 def deduplicate_findings(findings: Iterable[Finding]) -> list[Finding]:
-    """Deduplicate by assessment, asset, rule and title; retain the strongest confidence."""
+    """Deduplicate by assessment, asset, rule and title while preserving all evidence."""
     unique: dict[tuple[object, object, str, str], Finding] = {}
     for finding in findings:
         key = (finding.assessment_id, finding.asset_id, finding.rule_id, finding.title)
         current = unique.get(key)
-        if current is None or finding.confidence > current.confidence:
+        if current is None:
             unique[key] = finding
+            continue
+        if finding.confidence > current.confidence:
+            winner, other = finding, current
+        else:
+            winner, other = current, finding
+        merged_evidence = list(dict.fromkeys([*winner.evidence_ids, *other.evidence_ids]))
+        unique[key] = replace(winner, evidence_ids=merged_evidence)
     return list(unique.values())
