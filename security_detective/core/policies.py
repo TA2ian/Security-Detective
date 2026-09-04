@@ -27,25 +27,39 @@ class ExecutionPolicy:
             raise PolicyViolation("Destructive operations are disabled")
 
 
+def _normalize_expiry(expires_at: datetime) -> datetime:
+    if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+        raise PolicyViolation("Authorization expiry must be timezone-aware")
+    return expires_at.astimezone(timezone.utc)
+
+
 def validate_authorization(auth: Authorization, required_capability: str) -> None:
     if not auth.authorized:
         raise PolicyViolation("Target is not authorized for assessment")
-    if auth.expires_at is not None and auth.expires_at <= datetime.now(timezone.utc):
+    if auth.expires_at is not None and _normalize_expiry(auth.expires_at) <= datetime.now(timezone.utc):
         raise PolicyViolation("Authorization has expired")
     if required_capability not in auth.granted_capabilities:
         raise PolicyViolation(f"Authorization does not grant: {required_capability}")
 
 
 def _candidate(value: str) -> str:
+    value = value.strip()
     parsed = urlparse(value)
-    return parsed.netloc.lower() if parsed.scheme and parsed.netloc else value.lower()
+    if parsed.scheme and parsed.netloc:
+        host = parsed.hostname
+        if host is None:
+            return ""
+        return host.lower().rstrip(".")
+    return value.lower().rstrip(".")
 
 
 def in_scope(value: str, scope: Scope) -> bool:
     """Return True only when explicitly allowed and not denied."""
     candidate = _candidate(value)
-    allowed = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.allows)
-    denied = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.denies)
+    if not candidate:
+        return False
+    allowed = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.allows if rule.action == "allow")
+    denied = any(fnmatch(candidate, _candidate(rule.pattern)) for rule in scope.denies if rule.action == "deny")
     return allowed and not denied
 
 
