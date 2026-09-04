@@ -70,13 +70,10 @@ class EvidenceType(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ScopeRule:
-    """One explicit allow/deny boundary. Deny always wins."""
+    """One normalized pattern; its meaning is determined by Scope.allows or Scope.denies."""
     pattern: str
-    action: str = "allow"
 
     def __post_init__(self) -> None:
-        if self.action not in {"allow", "deny"}:
-            raise ValueError("ScopeRule action must be 'allow' or 'deny'")
         if not self.pattern.strip():
             raise ValueError("ScopeRule pattern must not be empty")
 
