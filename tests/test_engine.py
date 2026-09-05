@@ -31,9 +31,16 @@ def test_engine_runs_only_supported_and_permitted_scanners() -> None:
 
 def test_engine_rejects_policy_without_required_passive_capability() -> None:
     target = make_target()
-    assessment = Assessment(target_id=target.id)
+    assessment = Assessment(target_id=target.id, authorization_id="auth-1")
     with pytest.raises(PolicyViolation):
         AssessmentEngine([EmptyScanner()]).run(target, assessment, ExecutionPolicy(allowed_capabilities=frozenset()))
+
+
+def test_engine_rejects_missing_authorization_reference() -> None:
+    target = make_target()
+    assessment = Assessment(target_id=target.id)
+    with pytest.raises(PolicyViolation):
+        AssessmentEngine([EmptyScanner()]).run(target, assessment, ExecutionPolicy())
 
 
 def test_engine_rejects_mismatched_authorization_reference() -> None:
@@ -57,9 +64,30 @@ class InvalidOutputScanner:
         return ScanResult(assets=[asset], evidence=[evidence], findings=[finding])
 
 
+class MutatingScanner:
+    id = "test.mutating"
+    version = "1.0.0"
+    supported_target_types = frozenset({"website"})
+    required_capabilities = frozenset({"passive_scan"})
+
+    def scan(self, context: ScanContext) -> ScanResult:
+        context.target.name = "mutated.example"
+        context.target.authorization = None
+        return ScanResult()
+
+
+def test_engine_isolates_live_target_from_scanner_mutation() -> None:
+    target = make_target()
+    assessment = Assessment(target_id=target.id, authorization_id="auth-1")
+    output = AssessmentEngine([MutatingScanner()]).run(target, assessment, ExecutionPolicy())
+    assert output.assessment.status.value == "completed"
+    assert target.name == "example.com"
+    assert target.authorization is not None
+
+
 def test_engine_rejects_scanner_output_crossing_target_boundary() -> None:
     target = make_target()
-    assessment = Assessment(target_id=target.id)
+    assessment = Assessment(target_id=target.id, authorization_id="auth-1")
     with pytest.raises(PolicyViolation):
         AssessmentEngine([InvalidOutputScanner()]).run(target, assessment, ExecutionPolicy())
     assert assessment.status.value == "failed"
