@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -33,10 +34,9 @@ class AssessmentEngine:
         validate_authorization(target.authorization, required_capability)
         policy.require(required_capability)
 
-        if assessment.authorization_id is not None:
-            reference = target.authorization.authorization_reference
-            if reference != assessment.authorization_id:
-                raise PolicyViolation("Assessment authorization does not match target authorization")
+        reference = target.authorization.authorization_reference
+        if not reference or assessment.authorization_id != reference:
+            raise PolicyViolation("Assessment authorization must match a valid target authorization reference")
 
         assessment.transition(AssessmentStatus.AUTHORIZED)
         assessment.transition(AssessmentStatus.RUNNING)
@@ -56,7 +56,14 @@ class AssessmentEngine:
                     validate_authorization(target.authorization, capability)
                     policy.require(capability)
 
-                context = ScanContext(target=target, assessment_id=str(assessment.id), execution_policy=policy)
+                # Scanner code receives an isolated target snapshot. It cannot mutate
+                # the live authorization/scope/target object used by Core mid-assessment.
+                scanner_target = deepcopy(target)
+                context = ScanContext(
+                    target=scanner_target,
+                    assessment_id=str(assessment.id),
+                    execution_policy=policy,
+                )
                 result = scanner.scan(context)
                 all_assets.extend(result.assets)
                 all_evidence.extend(result.evidence)
