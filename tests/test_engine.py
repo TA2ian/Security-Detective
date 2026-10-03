@@ -1,4 +1,5 @@
 import pytest
+from uuid import uuid4
 
 from security_detective.core.engine import AssessmentEngine
 from security_detective.core.interfaces import ScanContext, ScanResult
@@ -14,6 +15,7 @@ class EmptyScanner:
 
     def scan(self, context: ScanContext) -> ScanResult:
         assert context.target.name == "example.com"
+        assert context.assessment_id
         return ScanResult()
 
 
@@ -59,8 +61,8 @@ class InvalidOutputScanner:
     def scan(self, context: ScanContext) -> ScanResult:
         foreign_target = Target(name="foreign.example", target_type=TargetType.WEBSITE)
         asset = Asset(target_id=foreign_target.id, asset_type="host", identifier="foreign.example", discovered_by=self.id)
-        evidence = Evidence(assessment_id=__import__("uuid").uuid4(), evidence_type=EvidenceType.HTTP, title="foreign", summary="foreign")
-        finding = Finding(assessment_id=__import__("uuid").uuid4(), asset_id=asset.id, rule_id="TEST", title="foreign", description="foreign", severity=Severity.HIGH, confidence=1.0, exploitability=1.0, impact=1.0, status=FindingStatus.CONFIRMED)
+        evidence = Evidence(assessment_id=uuid4(), evidence_type=EvidenceType.HTTP, title="foreign", summary="foreign")
+        finding = Finding(assessment_id=uuid4(), asset_id=asset.id, rule_id="TEST", title="foreign", description="foreign", severity=Severity.HIGH, confidence=1.0, exploitability=1.0, impact=1.0, status=FindingStatus.CONFIRMED)
         return ScanResult(assets=[asset], evidence=[evidence], findings=[finding])
 
 
@@ -74,6 +76,41 @@ class MutatingScanner:
         context.target.name = "mutated.example"
         context.target.authorization = None
         return ScanResult()
+
+
+class ContextBindingScanner:
+    id = "test.context-binding"
+    version = "1.0.0"
+    supported_target_types = frozenset({"website"})
+    required_capabilities = frozenset({"passive_scan"})
+
+    def scan(self, context: ScanContext) -> ScanResult:
+        assert isinstance(context.assessment_id, type(context.target.id))
+        asset = Asset(target_id=context.target.id, asset_type="host", identifier=context.target.name, discovered_by=self.id)
+        evidence = Evidence(assessment_id=context.assessment_id, evidence_type=EvidenceType.HTTP, title="bound", summary="bound")
+        finding = Finding(
+            assessment_id=context.assessment_id,
+            asset_id=asset.id,
+            rule_id="TEST-BOUND",
+            title="Bound",
+            description="bound",
+            severity=Severity.LOW,
+            confidence=0.9,
+            exploitability=0.1,
+            impact=0.1,
+            status=FindingStatus.SUSPECTED,
+            evidence_ids=[evidence.id],
+        )
+        return ScanResult(assets=[asset], evidence=[evidence], findings=[finding])
+
+
+def test_engine_binds_scanner_context_to_current_assessment() -> None:
+    target = make_target()
+    assessment = Assessment(target_id=target.id, authorization_id="auth-1")
+    output = AssessmentEngine([ContextBindingScanner()]).run(target, assessment, ExecutionPolicy())
+    assert output.evidence_count == 1
+    assert output.findings_count == 1
+    assert output.assessment.finding_ids
 
 
 def test_engine_isolates_live_target_from_scanner_mutation() -> None:
