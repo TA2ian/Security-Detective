@@ -56,12 +56,10 @@ class AssessmentEngine:
                     validate_authorization(target.authorization, capability)
                     policy.require(capability)
 
-                # Scanner code receives an isolated target snapshot. It cannot mutate
-                # the live authorization/scope/target object used by Core mid-assessment.
                 scanner_target = deepcopy(target)
                 context = ScanContext(
                     target=scanner_target,
-                    assessment_id=str(assessment.id),
+                    assessment_id=assessment.id,
                     execution_policy=policy,
                 )
                 result = scanner.scan(context)
