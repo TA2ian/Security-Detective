@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Iterable, Protocol
 from uuid import UUID
 
 from .models import Asset, Evidence, Finding, Target
