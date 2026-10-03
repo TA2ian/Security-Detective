@@ -113,6 +113,32 @@ class Asset:
     id: UUID = field(default_factory=uuid4)
 
 
+_SENSITIVE_EVIDENCE_KEYS = frozenset({
+    "authorization",
+    "cookie",
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_token",
+    "refresh_token",
+})
+
+
+def _contains_sensitive_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            normalized = str(key).strip().lower().replace("-", "_")
+            if normalized in _SENSITIVE_EVIDENCE_KEYS:
+                return True
+            if _contains_sensitive_key(child):
+                return True
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        return any(_contains_sensitive_key(item) for item in value)
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class Evidence:
     assessment_id: UUID
@@ -123,6 +149,10 @@ class Evidence:
     redacted: bool = False
     id: UUID = field(default_factory=uuid4)
     collected_at: datetime = field(default_factory=utcnow)
+
+    def __post_init__(self) -> None:
+        if not self.redacted and _contains_sensitive_key(self.data):
+            raise ValueError("Sensitive evidence keys require redaction before storage")
 
 
 @dataclass(slots=True)
