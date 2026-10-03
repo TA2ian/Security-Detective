@@ -100,3 +100,25 @@ def test_risk_score_is_bounded_and_prioritized() -> None:
     result = calculate_risk(finding, exposure=1.0, asset_criticality=1.0)
     assert 0 <= result.score <= 100
     assert result.priority == "critical"
+
+
+def test_evidence_rejects_unredacted_sensitive_keys() -> None:
+    assessment_id = uuid4()
+    with pytest.raises(ValueError):
+        Evidence(
+            assessment_id=assessment_id,
+            evidence_type=EvidenceType.HTTP,
+            title="secret",
+            summary="must not persist raw secret",
+            data={"headers": {"Authorization": "Bearer test-token"}},
+        )
+
+    evidence = Evidence(
+        assessment_id=assessment_id,
+        evidence_type=EvidenceType.HTTP,
+        title="redacted",
+        summary="safe evidence",
+        data={"headers": {"Authorization": "[REDACTED]"}},
+        redacted=True,
+    )
+    assert evidence.redacted is True
