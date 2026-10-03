@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Protocol
+from typing import Iterable
+from uuid import UUID
 
 from .models import Asset, Evidence, Finding, Target
 from .policies import ExecutionPolicy
@@ -10,7 +11,7 @@ from .policies import ExecutionPolicy
 @dataclass(frozen=True, slots=True)
 class ScanContext:
     target: Target
-    assessment_id: str
+    assessment_id: UUID
     execution_policy: ExecutionPolicy
 
 
